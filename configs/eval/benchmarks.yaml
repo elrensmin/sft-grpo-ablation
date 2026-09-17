@@ -1,0 +1,12 @@
+target:
+  - gsm8k
+
+retention:
+  - mmlu                # knowledge
+  - ifeval              # instruction following
+  - bbh                 # broad reasoning
+
+eval_settings:
+  batch_size: auto
+  num_fewshot: 0
+  apply_chat_template: true
