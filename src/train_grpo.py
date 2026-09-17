@@ -49,7 +49,8 @@ def main(cfg: BaseRunConfig,
          beta: float = 0.0,
          use_format_shaping: bool = True,
          grpo_data_file: str = "grpo_train_small.jsonl",
-         max_steps: int = -1):
+         max_steps: int = -1,
+         attn_implementation: str = "flash_attention_2"):
 
     os.environ.setdefault("WANDB_PROJECT", cfg.wandb_project)
     output_dir = Path("results/raw") / cfg.run_name
@@ -88,7 +89,7 @@ def main(cfg: BaseRunConfig,
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
         torch_dtype=torch.bfloat16,
-        attn_implementation="flash_attention_2",
+        attn_implementation=attn_implementation,
     )
 
     # --- config
@@ -139,6 +140,7 @@ def main(cfg: BaseRunConfig,
         seed=42,
         remove_unused_columns=False,
         max_steps=max_steps if max_steps > 0 else None,
+        use_vllm=False,
     )
 
     # --- train

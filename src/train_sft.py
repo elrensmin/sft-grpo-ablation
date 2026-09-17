@@ -53,12 +53,24 @@ def main(cfg: BaseRunConfig,
     dose_file = f"data/processed/sft_dose_{sft_dose}.jsonl"
     dataset = load_dataset("json", data_files=dose_file, split="train")
 
+    # Use the model's chat template when available (Qwen etc.); fall back to a
+    # plain instruction format for models without one (OPT, GPT-2).
+    has_chat = tokenizer.chat_template is not None
+
     def format_and_tokenize(example):
-        # Chat template applied at eval time; here we build a training string.
-        text = (
-            f"<|im_start|>user\n{example['prompt']}<|im_end|>\n"
-            f"<|im_start|>assistant\n{example['completion']}<|im_end|>"
-        )
+        if has_chat:
+            chat = [
+                {"role": "user", "content": example["prompt"]},
+                {"role": "assistant", "content": example["completion"]},
+            ]
+            text = tokenizer.apply_chat_template(
+                chat, tokenize=False, add_generation_prompt=False
+            )
+        else:
+            text = (
+                f"### Instruction\n{example['prompt']}\n\n"
+                f"### Response\n{example['completion']}"
+            )
         return {"text": text}
 
     dataset = dataset.map(format_and_tokenize, remove_columns=dataset.column_names)

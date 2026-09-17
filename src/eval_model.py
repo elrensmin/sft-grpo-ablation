@@ -6,8 +6,7 @@ from pathlib import Path
 import torch
 import tyro
 from datasets import load_dataset
-from transformers import AutoTokenizer
-from vllm import LLM, SamplingParams
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 BENCHMARKS = {
@@ -15,7 +14,79 @@ BENCHMARKS = {
 }
 
 
+def _make_prompt(tokenizer, question: str):
+    msg = (
+        "Solve the following math problem. Show your reasoning inside "
+        " thinking... response tags, then give the final numeric answer inside "
+        "<answer>...</answer> tags.\n\n"
+        f"Problem: {question.strip()}"
+    )
+    if tokenizer.chat_template is not None:
+        chat = [{"role": "user", "content": msg}]
+        return tokenizer.apply_chat_template(chat, tokenize=False, add_generation_prompt=True)
+    return f"### Instruction\n{msg}\n\n### Response\n"
+
+
+def eval_gsm8k_hf(model_path: str, output_file: str, n_samples: int = 20,
+                  max_new_tokens: int = 256):
+    """vLLM-free GSM8K eval via greedy transformers decoding (for small GPUs)."""
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+    model = AutoModelForCausalLM.from_pretrained(
+        model_path, torch_dtype=torch.bfloat16, device_map="cuda"
+    )
+
+    test = load_dataset("openai/gsm8k", "main", split="test")
+    if n_samples < len(test):
+        test = test.select(range(n_samples))
+
+    n_format = 0
+    n_exact = 0
+    records = []
+    for ex in test:
+        text = _make_prompt(tokenizer, ex["question"])
+        inputs = tokenizer(text, return_tensors="pt").to("cuda")
+        with torch.no_grad():
+            out = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                do_sample=False,
+                temperature=None,
+                top_p=None,
+            )
+        generated = tokenizer.decode(out[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
+        gold = ex["answer"].split("####")[-1].strip()
+
+        has_think = " thinking" in generated and " response" in generated
+        has_answer = "<answer>" in generated and "</answer>" in generated
+        format_ok = has_think and has_answer
+
+        m = re.search(r"<answer>\s*(.*?)\s*</answer>", generated, re.DOTALL)
+        pred = m.group(1).strip() if m else ""
+        exact = pred == gold
+
+        n_format += int(format_ok)
+        n_exact += int(exact)
+        records.append({
+            "completion": generated,
+            "gold": gold,
+            "pred": pred,
+            "format_ok": format_ok,
+            "exact": exact,
+        })
+
+    result = {
+        "gsm8k_format_acc": n_format / len(records),
+        "gsm8k_exact_acc": n_exact / len(records),
+        "n": len(records),
+    }
+    Path(output_file).write_text(json.dumps({"metrics": result, "records": records}, indent=2))
+    return result
+
+
 def eval_gsm8k_format(model_path: str, output_file: str, n_samples: int = 1319):
+    from vllm import LLM, SamplingParams  # deferred: only on vLLM machines
     llm = LLM(
         model=model_path,
         tensor_parallel_size=torch.cuda.device_count(),
@@ -116,12 +187,22 @@ def eval_lm_harness(model_path: str, output_dir: str, limit: int | None = None):
 
 
 def main(model_path: str, run_name: str, eval_dir: str = "results/evals",
-         limit: int | None = None, gsm8k_samples: int = 1319):
+         limit: int | None = None, gsm8k_samples: int = 1319,
+         use_vllm: bool = True):
     out_dir = Path(eval_dir) / run_name
     out_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"== Evaluating {run_name} ==")
-    target = eval_gsm8k_format(model_path, str(out_dir / "gsm8k.json"), n_samples=gsm8k_samples)
+    if use_vllm:
+        from vllm import LLM, SamplingParams  # deferred: only on vLLM machines
+        target = eval_gsm8k_format(model_path, str(out_dir / "gsm8k.json"), n_samples=gsm8k_samples)
+    else:
+        target = eval_gsm8k_hf(model_path, str(out_dir / "gsm8k.json"), n_samples=gsm8k_samples)
+        summary = {"run_name": run_name, **target}
+        (out_dir / "summary.json").write_text(json.dumps(summary, indent=2))
+        print(json.dumps(summary, indent=2))
+        return
+
     retention = eval_lm_harness(model_path, str(out_dir), limit=limit)
 
     summary = {"run_name": run_name, **target, **retention}

@@ -2,19 +2,17 @@
 set -euo pipefail
 
 # Create venv
-python3.11 -m venv .venv
+python3.12 -m venv .venv
 source .venv/bin/activate
 
 # Install deps
 pip install --upgrade pip wheel
 pip install -r requirements.txt
 
-# Verify multi-GPU is visible
+# Verify GPU is visible
 accelerate env
 
-# Login to W&B (interactive)
-wandb login
-
-# Set env vars from template
-cp .env.example .env
-echo "Edit .env with your WANDB_PROJECT and HF_TOKEN, then re-run."
+# Local runs: W&B optional. Set WANDB_MODE=disabled to run offline.
+echo "If you don't have W&B set up, run:"
+echo "  export WANDB_MODE=disabled"
+echo "and create .env if you need WANDB_PROJECT / HF_TOKEN."
