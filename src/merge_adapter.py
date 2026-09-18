@@ -19,7 +19,7 @@ def main(adapter_path: str, output_path: str, base_model: str = ""):
             base_model = json.load(f)["base_model_name_or_path"]
 
     model = AutoModelForCausalLM.from_pretrained(
-        base_model, torch_dtype="auto", device_map="cpu"
+        base_model, dtype="auto", device_map="cpu"
     )
     model = PeftModel.from_pretrained(model, adapter_path)
     merged = model.merge_and_unload()

@@ -1,26 +1,32 @@
+# Install/upgrade to the newest compatible set:
+#   uv pip install -r requirements.txt -U
+# Freeze (pin) once the resolved set is verified on the GPU box:
+#   uv pip freeze > requirements.lock
+
 # Core training
-torch==2.5.1
-transformers==4.46.3
-trl==0.13.0
-peft==0.13.2
-accelerate==1.1.1
-datasets==3.1.0
-bitsandbytes==0.44.1
+torch
+transformers
+trl
+peft
+accelerate
+datasets
+bitsandbytes
 
 # Eval
-lm-eval==0.4.5
-vllm==0.6.4
+lm-eval
+# trl 1.13.0 supports vLLM 0.19.1-0.28.0; 0.29.0 triggers compatibility warnings.
+vllm>=0.19.1,<0.29
 
 # Tracking & analysis
-wandb==0.18.7
-pandas==2.2.3
-numpy==1.26.4
-matplotlib==3.9.2
-seaborn==0.13.2
-scipy==1.14.1
-scikit-learn==1.5.2
+wandb
+pandas
+numpy
+matplotlib
+seaborn
+scipy
+scikit-learn
 
 # Utils
-python-dotenv==1.0.1
-tqdm==4.67.1
-rich==13.9.4
+python-dotenv
+tqdm
+rich

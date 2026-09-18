@@ -113,7 +113,9 @@ def main(cfg: argparse.Namespace) -> None:
         gradient_accumulation_steps=grad_accum,
         learning_rate=learning_rate,
         num_train_epochs=num_epochs,
-        warmup_ratio=0.03,
+        # transformers>=5 dropped `warmup_ratio`; `warmup_steps` now takes a float
+        # in [0, 1) meaning a *ratio* of total steps, so 0.03 == the old 0.03.
+        warmup_steps=0.03,
         lr_scheduler_type="cosine",
         optim="adamw_torch",
 

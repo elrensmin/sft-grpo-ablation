@@ -2,6 +2,10 @@
 set -euo pipefail
 source .venv/bin/activate
 
+# Export .env before Python starts: huggingface_hub resolves HF_HOME at import
+# time, so a Python-side load_dotenv() is too late for the model/dataset cache.
+if [[ -f .env ]]; then set -a; source .env; set +a; fi
+
 MODEL="Qwen/Qwen2.5-3B-Instruct"
 GPUS=4
 

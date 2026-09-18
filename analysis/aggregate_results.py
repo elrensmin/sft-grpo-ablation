@@ -6,6 +6,10 @@ import numpy as np
 EVAL_DIR = Path("results/evals")
 OUT = Path("results/aggregate.csv")
 
+# Only the ablation pipelines belong in the aggregate table; smoke/debug runs
+# (e.g. smoke_grpo) would otherwise show up as their own bogus pipeline rows.
+PIPELINES = {"P0", "P1", "P2", "P3"}
+
 DEFAULT_W_TARGET = 0.5
 
 
@@ -26,10 +30,15 @@ def parse_run_name(name: str) -> dict:
 
 def main():
     rows = []
+    skipped = []
     for summary_file in EVAL_DIR.glob("*/summary.json"):
         data = json.loads(summary_file.read_text())
         run_name = data["run_name"]
         meta = parse_run_name(run_name)
+
+        if meta["pipeline"] not in PIPELINES:
+            skipped.append(run_name)
+            continue
 
         target = data.get("gsm8k_exact_acc", np.nan)
         format_acc = data.get("gsm8k_format_acc", np.nan)
@@ -46,6 +55,9 @@ def main():
             "bbh": data.get("bbh"),
             "retention_mean": retention,
         })
+
+    if skipped:
+        print(f"Skipped {len(skipped)} non-pipeline eval dir(s): {', '.join(sorted(skipped))}\n")
 
     df = pd.DataFrame(rows)
     df.to_csv(OUT, index=False)

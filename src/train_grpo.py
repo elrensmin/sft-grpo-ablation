@@ -2,6 +2,7 @@ import os
 import re
 import json
 import argparse
+import importlib.util
 from pathlib import Path
 
 import torch
@@ -14,6 +15,25 @@ from src.config import add_run_config, TARGET_MODULE_PRESETS
 from src.utils.wandb_setup import init_wandb
 
 
+def resolve_attn_implementation(requested: str) -> str:
+    """Return an attention backend this environment can actually use.
+
+    `flash_attention_2` is the fastest option but needs the optional `flash_attn`
+    package *and* an Ampere-or-newer GPU. With `"auto"` we fall back to `sdpa`
+    when either is missing so the pipeline also runs on laptop GPUs and CPU
+    smoke tests. An explicit choice is always honoured as-is.
+    """
+    if requested != "auto":
+        return requested
+    if importlib.util.find_spec("flash_attn") is None:
+        print("[attn] flash_attn is not installed -> falling back to sdpa")
+        return "sdpa"
+    if not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] < 8:
+        print("[attn] GPU does not support flash_attention_2 -> falling back to sdpa")
+        return "sdpa"
+    return "flash_attention_2"
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="GRPO stage (pipelines P0/P2/P3)")
     add_run_config(parser)
@@ -23,8 +43,12 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("--num_epochs", type=int, default=1)
     g.add_argument("--per_device_batch_size", type=int, default=2)
     g.add_argument("--grad_accum", type=int, default=8)
-    g.add_argument("--num_generations", type=int, default=4)
-    g.add_argument("--max_prompt_length", type=int, default=512)
+    g.add_argument("--num_generations", type=int, default=4,
+                   help="Completions per prompt; must divide "
+                        "per_device_batch_size * grad_accum * num_processes")
+    g.add_argument("--max_prompt_length", type=int, default=None,
+                   help="Deprecated: trl>=1.0 removed prompt truncation from GRPO, "
+                        "so this is accepted for backwards compatibility but ignored")
     g.add_argument("--max_completion_length", type=int, default=512)
     g.add_argument("--beta", type=float, default=0.0, help="KL penalty to the reference model")
     g.add_argument("--use_format_shaping", action=argparse.BooleanOptionalAction,
@@ -33,8 +57,10 @@ def build_parser() -> argparse.ArgumentParser:
                    help="File under data/processed/ to train on")
     g.add_argument("--max_steps", type=int, default=-1,
                    help="Cap the number of optimizer steps; <= 0 means no cap")
-    g.add_argument("--attn_implementation", default="flash_attention_2",
-                   choices=["flash_attention_2", "sdpa", "eager"])
+    g.add_argument("--attn_implementation", default="auto",
+                   choices=["auto", "flash_attention_2", "sdpa", "eager"],
+                   help="'auto' picks flash_attention_2 when flash-attn is installed "
+                        "and the GPU supports it, otherwise sdpa")
     return parser
 
 
@@ -70,13 +96,18 @@ def main(cfg: argparse.Namespace) -> None:
     per_device_batch_size: int = cfg.per_device_batch_size
     grad_accum: int = cfg.grad_accum
     num_generations: int = cfg.num_generations
-    max_prompt_length: int = cfg.max_prompt_length
     max_completion_length: int = cfg.max_completion_length
     beta: float = cfg.beta
     use_format_shaping: bool = cfg.use_format_shaping
     grpo_data_file: str = cfg.grpo_data_file
     max_steps: int = cfg.max_steps
-    attn_implementation: str = cfg.attn_implementation
+    attn_implementation: str = resolve_attn_implementation(cfg.attn_implementation)
+
+    if cfg.max_prompt_length is not None:
+        print(
+            "[grpo] NOTE: --max_prompt_length is ignored (trl>=1.0 removed prompt "
+            "truncation from GRPO); prompts are passed through untruncated."
+        )
 
     os.environ.setdefault("WANDB_PROJECT", cfg.wandb_project)
     output_dir = Path("results/raw") / cfg.run_name
@@ -114,7 +145,8 @@ def main(cfg: argparse.Namespace) -> None:
 
     model = AutoModelForCausalLM.from_pretrained(
         cfg.model_name,
-        torch_dtype=torch.bfloat16,
+        # transformers>=5 renamed `torch_dtype` to `dtype`
+        dtype=torch.bfloat16,
         attn_implementation=attn_implementation,
     )
 
@@ -149,7 +181,6 @@ def main(cfg: argparse.Namespace) -> None:
         gradient_accumulation_steps=grad_accum,
 
         num_generations=num_generations,
-        max_prompt_length=max_prompt_length,
         max_completion_length=max_completion_length,
         beta=beta,
         loss_type="grpo",
@@ -165,7 +196,9 @@ def main(cfg: argparse.Namespace) -> None:
         report_to="wandb",
         seed=42,
         remove_unused_columns=False,
-        max_steps=max_steps if max_steps > 0 else None,
+        # parser default is -1, which is transformers' own "no cap" sentinel;
+        # passing None here used to be tolerated but is not a valid value.
+        max_steps=max_steps,
         use_vllm=False,
     )
 
@@ -184,9 +217,15 @@ def main(cfg: argparse.Namespace) -> None:
 
     # --- log
     peak_mem = torch.cuda.max_memory_allocated() / 1e9
+    # The final log_history entry is the run summary (train_runtime/epoch), which
+    # carries no "loss" key, so walk backwards to the last real training step.
+    final_loss = next(
+        (entry["loss"] for entry in reversed(trainer.state.log_history) if "loss" in entry),
+        None,
+    )
     summary = {
         "peak_memory_gb": peak_mem,
-        "final_loss": trainer.state.log_history[-1].get("loss"),
+        "final_loss": final_loss,
     }
     (output_dir / "training_summary.json").write_text(json.dumps(summary, indent=2))
     run.log(summary)

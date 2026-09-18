@@ -2,6 +2,10 @@
 set -euo pipefail
 source .venv/bin/activate
 
+# Export .env first so the explicit WANDB_MODE=disabled below still wins, and so
+# HF_HOME is set before huggingface_hub resolves it at import time.
+if [[ -f .env ]]; then set -a; source .env; set +a; fi
+
 export WANDB_MODE=disabled
 
 MODEL="facebook/opt-125m"
@@ -16,14 +20,16 @@ accelerate launch --config_file "$ACCEL" -m src.train_sft \
   --per_device_batch_size 1 --grad_accum 1
 
 # --- GRPO (continues the SFT adapter) ---
+# grad_accum is 4 so that generation_batch_size (1 * 4 * 1 gpu) is divisible by
+# num_generations=4, which trl enforces in GRPOConfig.__post_init__.
 accelerate launch --config_file "$ACCEL" -m src.train_grpo \
   --run_name smoke_grpo --pipeline P2 --stage grpo \
   --model_name "$MODEL" \
   --lora_r 4 --lora_alpha 8 --lora_target_preset attn \
   --init_adapter_path results/raw/smoke_sft \
   --learning_rate 1e-6 --num_epochs 1 \
-  --per_device_batch_size 1 --grad_accum 1 \
-  --num_generations 4 --max_prompt_length 256 --max_completion_length 128 \
+  --per_device_batch_size 1 --grad_accum 4 \
+  --num_generations 4 --max_completion_length 128 \
   --grpo_data_file grpo_train_small.jsonl --max_steps 20 \
   --attn_implementation sdpa
 

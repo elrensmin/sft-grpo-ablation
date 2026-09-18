@@ -71,11 +71,15 @@ python -m src.train_sft --run_name X --pipeline P1 --lora_r 16 \
 
 Copy `.env.example` to `.env`: `WANDB_PROJECT`, `WANDB_ENTITY`, `HF_TOKEN`, `HF_HOME`, `TRANSFORMERS_CACHE`. `src/utils/wandb_setup.py` loads it via python-dotenv. Never commit `.env` or `results/`.
 
+`uv venv .venv --python 3.12` then `uv pip install -r requirements.lock` reproduces the verified set; `scripts/00_setup.sh` does exactly this by default. Set `SETUP_UNPINNED=1` to resolve the newest compatible versions from `requirements.txt` instead, then re-freeze with `uv pip freeze > requirements.lock`.
+
+Note: trl 1.13 supports vLLM 0.19.1-0.28.0, so `requirements.txt` caps vLLM below 0.29.
+
 ## Conventions
 
-- Python 3.13, dependencies pinned in `requirements.txt` (torch 2.5.1, trl 0.13, peft 0.13, transformers 4.46).
+- Python 3.12, deps frozen in `requirements.lock` (torch 2.13, transformers 5.17, trl 1.13, peft 0.21, vllm 0.28). `requirements.txt` is deliberately unpinned for upgrades.
 - Run via `python -m` and `accelerate launch -m`, not `python file.py`.
-- bf16 + gradient checkpointing throughout; flash attention in GRPO.
+- bf16 + gradient checkpointing throughout. GRPO defaults to `--attn_implementation auto` (`flash_attention_2` when `flash_attn` is installed and the GPU is Ampere+, else `sdpa`); `flash_attn` is not in the lock.
 - LoRA `bias="none"`, `lora_alpha = 2 * lora_r` in pipeline scripts.
 - Seed 42 everywhere.
 - GSM8K answer format: ` thinking... response` reasoning tags + `<answer>...</answer>`.

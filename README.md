@@ -23,10 +23,61 @@ See [EXPERIMENT.md](EXPERIMENT.md) for the question, hypothesis, and eval detail
 ## Setup and data
 
 ```bash
-cp .env.example .env   # WANDB_PROJECT, WANDB_ENTITY, HF_TOKEN, HF_HOME
-bash scripts/00_setup.sh        # venv, deps, wandb login
+cp .env.example .env            # WANDB_PROJECT, WANDB_ENTITY, HF_TOKEN, HF_HOME
+bash scripts/00_setup.sh        # Python 3.12 venv + deps from requirements.lock
 bash scripts/01_prepare_data.sh # build data/processed datasets
 ```
+
+`scripts/00_setup.sh` installs the frozen `requirements.lock` by default, so any machine
+reproduces the verified set. To deliberately move to the newest compatible versions instead,
+run `SETUP_UNPINNED=1 bash scripts/00_setup.sh` and then re-freeze:
+
+```bash
+uv pip freeze > requirements.lock
+```
+
+## Replicating on a remote GPU box
+
+End to end from a fresh clone:
+
+```bash
+git clone https://github.com/elrensmin/sft-grpo-ablation.git
+cd sft-grpo-ablation
+
+# uv, the package manager used for the venv and lock install
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.local/bin/env
+
+cp .env.example .env            # WANDB_PROJECT, WANDB_ENTITY, HF_TOKEN, HF_HOME
+bash scripts/00_setup.sh        # Python 3.12 venv + requirements.lock
+bash scripts/01_prepare_data.sh
+
+bash scripts/lean_run.sh        # reduced sweep: P1 -> P2, plus P0
+bash scripts/05_eval_all.sh     # merge + eval every P0-P3 run
+bash scripts/06_analyze.sh      # aggregate table + figures
+```
+
+To build the environment by hand instead of via `00_setup.sh`:
+
+```bash
+uv venv .venv --python 3.12
+uv pip install -r requirements.lock
+```
+
+Notes:
+
+- Python **3.12** is required. The lock was frozen against it, and `.python-version` plus
+  `pyproject.toml` agree, so `uv` will not silently build a different interpreter.
+- Point `HF_HOME` / `TRANSFORMERS_CACHE` at a roomy disk in `.env` — the sweep downloads
+  several Qwen2.5 models plus GSM8K/MMLU/IFEval/BBH. The example uses `/scratch/$USER/hf_cache`.
+- `lean_run.sh` is resumable: it skips any run that already has an `adapter_config.json`.
+- Eval defaults to vLLM over all 1319 GSM8K examples plus the three retention benchmarks.
+  For a fast check that touches only GSM8K, bypass vLLM:
+
+  ```bash
+  python src/eval_model.py --model_path results/evals/<run>_merged \
+    --run_name <run> --no-use_vllm --gsm8k_samples 20
+  ```
 
 ## Smoke test (1 GPU)
 
@@ -66,9 +117,13 @@ python -m src.train_sft --run_name X --pipeline P1 --lora_r 16 --sft_dose 500 --
 
 ## Conventions
 
-- Python 3.13, pinned deps (torch 2.5.1, trl 0.13, peft 0.13, transformers 4.46).
+- Python 3.12, deps frozen in `requirements.lock` (torch 2.13, transformers 5.17, trl 1.13,
+  peft 0.21, vllm 0.28). `requirements.txt` is deliberately unpinned for upgrades; install the
+  lock to reproduce a verified set.
 - Run via `python -m` / `accelerate launch -m`.
-- bf16 + gradient checkpointing throughout; flash attention in GRPO.
+- bf16 + gradient checkpointing throughout. GRPO defaults to `--attn_implementation auto`:
+  `flash_attention_2` when `flash_attn` is installed and the GPU is Ampere+, otherwise `sdpa`.
+  `flash_attn` is not part of the lock, so install it separately to enable flash attention.
 - LoRA `bias="none"`, `lora_alpha = 2 * lora_r`. Seed 42 everywhere.
-- GSM8K format: `thinking... response` reasoning tags + `<answer>...</answer>`.
+- GSM8K format: `&lt;think&gt;...&lt;/think&gt;` reasoning tags + `&lt;answer&gt;...&lt;/answer&gt;`.
 - Eval: GSM8K exact + format (target); MMLU/IFEval/BBH (retention).

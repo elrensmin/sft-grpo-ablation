@@ -47,7 +47,7 @@ def eval_gsm8k_hf(model_path: str, output_file: str, n_samples: int = 20,
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = AutoModelForCausalLM.from_pretrained(
-        model_path, torch_dtype=torch.bfloat16, device_map="cuda"
+        model_path, dtype=torch.bfloat16, device_map="cuda"
     )
 
     test = load_dataset("openai/gsm8k", "main", split="test")

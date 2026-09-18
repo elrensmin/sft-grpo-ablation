@@ -8,3 +8,14 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Secrets — never commit (contains WANDB_ENTITY / HF_TOKEN)
+.env
+
+# Runtime artifacts: trained adapters, merged models, eval output, W&B logs,
+# and datasets built by scripts/01_prepare_data.sh. All are regenerable.
+results/
+wandb/
+data/processed/
+
+# Keep requirements.lock tracked: it is the reproducible dependency set.
