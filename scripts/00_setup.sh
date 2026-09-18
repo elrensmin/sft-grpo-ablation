@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Create venv
-python3.12 -m venv .venv
+# Create venv and install deps via uv
+uv venv .venv --python 3.12
 source .venv/bin/activate
 
-# Install deps
-pip install --upgrade pip wheel
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 
 # Verify GPU is visible
 accelerate env
