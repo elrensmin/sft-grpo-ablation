@@ -1,12 +1,25 @@
+import argparse
 import json
 import re
 import subprocess
 from pathlib import Path
 
 import torch
-import tyro
 from datasets import load_dataset
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Evaluate a merged model on GSM8K + retention benchmarks")
+    parser.add_argument("--model_path", required=True, help="Merged model directory to evaluate")
+    parser.add_argument("--run_name", required=True, help="Names results/evals/<run_name>/")
+    parser.add_argument("--eval_dir", default="results/evals")
+    parser.add_argument("--limit", type=int, default=None,
+                        help="lm-eval --limit (few-shot samples per retention task)")
+    parser.add_argument("--gsm8k_samples", type=int, default=1319)
+    parser.add_argument("--use_vllm", action=argparse.BooleanOptionalAction,
+                        default=True, help="Use vLLM for GSM8K; --no-use_vllm uses greedy HF decoding")
+    return parser
 
 
 BENCHMARKS = {
@@ -225,4 +238,4 @@ def main(model_path: str, run_name: str, eval_dir: str = "results/evals",
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    main(**vars(build_parser().parse_args()))

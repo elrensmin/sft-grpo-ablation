@@ -33,12 +33,12 @@ bash scripts/01_prepare_data.sh # build data/processed datasets
 ```bash
 accelerate launch --config_file configs/accelerate/1gpu.yaml -m src.train_sft \
   --run_name debug_sft --model_name Qwen/Qwen2.5-0.5B-Instruct \
-  --lora_r 4 --lora_target_preset attn -- --sft_dose 500 --num_epochs 1
+  --lora_r 4 --lora_target_preset attn --sft_dose 500 --num_epochs 1
 
 accelerate launch --config_file configs/accelerate/1gpu.yaml -m src.train_grpo \
   --run_name debug_grpo --model_name Qwen/Qwen2.5-0.5B-Instruct \
   --lora_r 4 --lora_target_preset attn --init_adapter_path results/raw/debug_sft \
-  -- --learning_rate 1e-6 --num_epochs 1 --per_device_batch_size 1
+  --learning_rate 1e-6 --num_epochs 1 --per_device_batch_size 1
 
 python src/merge_adapter.py --adapter_path results/raw/debug_grpo --output_path results/evals/debug_grpo_merged
 python src/eval_model.py --model_path results/evals/debug_grpo_merged --run_name debug_grpo
@@ -56,10 +56,12 @@ bash scripts/06_analyze.sh
 
 ## Invocation pattern
 
-CLI args split at `--`: flags before it are tyro `BaseRunConfig` fields, after it are the entrypoint's own params.
+Entrypoints are plain `argparse` CLIs; flags are flat (no `--` separator). Shared
+identity/model/LoRA flags come from `add_run_config()` in `src/config.py` and sit at the
+same level as each entrypoint's stage flags.
 
 ```bash
-python -m src.train_sft --run_name X --pipeline P1 --lora_r 16 -- --sft_dose 500 --learning_rate 2e-4
+python -m src.train_sft --run_name X --pipeline P1 --lora_r 16 --sft_dose 500 --learning_rate 2e-4
 ```
 
 ## Conventions

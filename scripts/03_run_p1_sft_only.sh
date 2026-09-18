@@ -20,7 +20,6 @@ for DOSE in 500 5000 50000; do
         --model_name "$MODEL" \
         --lora_r $R --lora_alpha $((R*2)) \
         --lora_target_preset $TARGET \
-        -- \
         --sft_dose $DOSE \
         --learning_rate 2e-4 \
         --num_epochs 1

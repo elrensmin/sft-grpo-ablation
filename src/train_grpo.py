@@ -1,17 +1,42 @@
 import os
 import re
 import json
+import argparse
 from pathlib import Path
 
 import torch
-import tyro
 from datasets import load_dataset
 from peft import LoraConfig, PeftModel, TaskType
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from trl import GRPOTrainer, GRPOConfig
 
-from src.config import BaseRunConfig, TARGET_MODULE_PRESETS
+from src.config import add_run_config, TARGET_MODULE_PRESETS
 from src.utils.wandb_setup import init_wandb
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="GRPO stage (pipelines P0/P2/P3)")
+    add_run_config(parser)
+
+    g = parser.add_argument_group("grpo")
+    g.add_argument("--learning_rate", type=float, default=1e-6)
+    g.add_argument("--num_epochs", type=int, default=1)
+    g.add_argument("--per_device_batch_size", type=int, default=2)
+    g.add_argument("--grad_accum", type=int, default=8)
+    g.add_argument("--num_generations", type=int, default=4)
+    g.add_argument("--max_prompt_length", type=int, default=512)
+    g.add_argument("--max_completion_length", type=int, default=512)
+    g.add_argument("--beta", type=float, default=0.0, help="KL penalty to the reference model")
+    g.add_argument("--use_format_shaping", action=argparse.BooleanOptionalAction,
+                   default=True, help="Add the format reward to the exact-match reward")
+    g.add_argument("--grpo_data_file", default="grpo_train_small.jsonl",
+                   help="File under data/processed/ to train on")
+    g.add_argument("--max_steps", type=int, default=-1,
+                   help="Cap the number of optimizer steps; <= 0 means no cap")
+    g.add_argument("--attn_implementation", default="flash_attention_2",
+                   choices=["flash_attention_2", "sdpa", "eager"])
+    return parser
+
 
 def extract_answer(text: str) -> str:
     m = re.search(r"<answer>\s*(.*?)\s*</answer>", text, re.DOTALL)
@@ -38,19 +63,20 @@ def format_reward(completions, **kwargs):
     return rewards
 
 
-def main(cfg: BaseRunConfig,
-         learning_rate: float = 1e-6,
-         num_epochs: int = 1,
-         per_device_batch_size: int = 2,
-         grad_accum: int = 8,
-         num_generations: int = 4,
-         max_prompt_length: int = 512,
-         max_completion_length: int = 512,
-         beta: float = 0.0,
-         use_format_shaping: bool = True,
-         grpo_data_file: str = "grpo_train_small.jsonl",
-         max_steps: int = -1,
-         attn_implementation: str = "flash_attention_2"):
+def main(cfg: argparse.Namespace) -> None:
+    # Stage hyperparameters; defaults are declared in build_parser().
+    learning_rate: float = cfg.learning_rate
+    num_epochs: int = cfg.num_epochs
+    per_device_batch_size: int = cfg.per_device_batch_size
+    grad_accum: int = cfg.grad_accum
+    num_generations: int = cfg.num_generations
+    max_prompt_length: int = cfg.max_prompt_length
+    max_completion_length: int = cfg.max_completion_length
+    beta: float = cfg.beta
+    use_format_shaping: bool = cfg.use_format_shaping
+    grpo_data_file: str = cfg.grpo_data_file
+    max_steps: int = cfg.max_steps
+    attn_implementation: str = cfg.attn_implementation
 
     os.environ.setdefault("WANDB_PROJECT", cfg.wandb_project)
     output_dir = Path("results/raw") / cfg.run_name
@@ -168,4 +194,4 @@ def main(cfg: BaseRunConfig,
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    main(build_parser().parse_args())

@@ -16,7 +16,6 @@ accelerate launch \
   --lora_r 16 --lora_alpha 32 \
   --lora_target_preset attn \
   --wandb_tags '["P0","baseline"]' \
-  -- \
   --learning_rate 1e-6
 
 # P0b: higher LR (RL typically needs lower LR than SFT)
@@ -29,5 +28,4 @@ accelerate launch \
   --model_name $MODEL \
   --lora_r 16 --lora_alpha 32 \
   --lora_target_preset attn \
-  -- \
   --learning_rate 5e-6

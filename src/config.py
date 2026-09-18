@@ -1,6 +1,5 @@
-from dataclasses import dataclass, field
-from typing import Optional
-
+import argparse
+import json
 
 TARGET_MODULE_PRESETS = {
     "attn": ["q_proj", "k_proj", "v_proj", "o_proj"],
@@ -10,26 +9,35 @@ TARGET_MODULE_PRESETS = {
 }
 
 
-@dataclass
-class BaseRunConfig:
+def add_run_config(parser: argparse.ArgumentParser) -> None:
+    """Register the shared run identity / model / LoRA flags on `parser`."""
+    g = parser.add_argument_group("run config")
+
     # Identity
-    run_name: str = "debug"
-    stage: str = "sft"               # sft | grpo
-    pipeline: str = "P2"             # P0 | P1 | P2 | P3
-    notes: str = ""
+    g.add_argument("--run_name", default="debug",
+                   help="Run identifier: names results/raw/<run_name> and the W&B run")
+    g.add_argument("--stage", default="sft", choices=["sft", "grpo"])
+    g.add_argument("--pipeline", default="P2", choices=["P0", "P1", "P2", "P3"],
+                   help="Ablation pipeline this run belongs to")
+    g.add_argument("--notes", default="", help="Free-form note, logged to W&B")
 
     # Model
-    model_name: str = "Qwen/Qwen2.5-3B-Instruct"
-    load_in_4bit: bool = False
+    g.add_argument("--model_name", default="Qwen/Qwen2.5-3B-Instruct")
+    g.add_argument("--load_in_4bit", action=argparse.BooleanOptionalAction,
+                   default=False)
 
     # LoRA
-    use_lora: bool = True
-    lora_r: int = 16
-    lora_alpha: int = 32
-    lora_dropout: float = 0.0
-    lora_target_preset: str = "attn"    # attn | mlp | all
-    init_adapter_path: Optional[str] = None
+    g.add_argument("--use_lora", action=argparse.BooleanOptionalAction, default=True)
+    g.add_argument("--lora_r", type=int, default=16)
+    g.add_argument("--lora_alpha", type=int, default=32,
+                   help="Pipeline scripts use 2 * lora_r")
+    g.add_argument("--lora_dropout", type=float, default=0.0)
+    g.add_argument("--lora_target_preset", default="attn",
+                   choices=sorted(TARGET_MODULE_PRESETS))
+    g.add_argument("--init_adapter_path", default=None,
+                   help="Continue training from this existing LoRA adapter")
 
     # Logging
-    wandb_project: str = "sft-grpo-ablation"
-    wandb_tags: list = field(default_factory=list)
+    g.add_argument("--wandb_project", default="sft-grpo-ablation")
+    g.add_argument("--wandb_tags", type=json.loads, default=[],
+                   help='JSON list, e.g. \'["P0","baseline"]\'')

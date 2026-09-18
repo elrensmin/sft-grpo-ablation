@@ -15,7 +15,7 @@ Four pipelines:
 - `src/` : training/eval entrypoints, each run with `python -m`
   - `train_sft.py` : SFT stage (trl `SFTTrainer`, LoRA via peft)
   - `train_grpo.py` : GRPO stage (trl `GRPOTrainer`, LoRA, can continue from an existing adapter via `--init_adapter_path`)
-  - `config.py` : shared `BaseRunConfig` dataclass + `TARGET_MODULE_PRESETS` (`attn`/`mlp`/`all`)
+  - `config.py` : `add_run_config()` (shared identity/model/LoRA CLI flags) + `TARGET_MODULE_PRESETS` (`attn`/`mlp`/`all`)
   - `merge_adapter.py` : merge LoRA adapter into base model
   - `eval_model.py` : GSM8K (vLLM, exact + format) and lm-eval-harness (mmlu/ifeval/bbh)
   - `utils/wandb_setup.py` : W&B init wrapper
@@ -37,12 +37,12 @@ Smoke test (1 GPU, tiny configs):
 ```bash
 accelerate launch --config_file configs/accelerate/1gpu.yaml -m src.train_sft \
   --run_name debug_sft --model_name Qwen/Qwen2.5-0.5B-Instruct \
-  --lora_r 4 --lora_target_preset attn -- --sft_dose 500 --num_epochs 1
+  --lora_r 4 --lora_target_preset attn --sft_dose 500 --num_epochs 1
 
 accelerate launch --config_file configs/accelerate/1gpu.yaml -m src.train_grpo \
   --run_name debug_grpo --model_name Qwen/Qwen2.5-0.5B-Instruct \
   --lora_r 4 --lora_target_preset attn --init_adapter_path results/raw/debug_sft \
-  -- --learning_rate 1e-6 --num_epochs 1 --per_device_batch_size 1
+  --learning_rate 1e-6 --num_epochs 1 --per_device_batch_size 1
 
 python src/merge_adapter.py --adapter_path results/raw/debug_grpo --output_path results/evals/debug_grpo_merged
 python src/eval_model.py --model_path results/evals/debug_grpo_merged --run_name debug_grpo
@@ -59,10 +59,12 @@ bash scripts/06_analyze.sh             # aggregation + figures
 
 ## Invocation pattern
 
-CLI args split at `--`: flags before it are tyro `BaseRunConfig` fields, after it are the entrypoint's own params. Example:
+Every entrypoint is a plain `argparse` CLI. Flags are flat (no `--` separator): shared
+identity/model/LoRA flags from `add_run_config()` plus the entrypoint's own stage flags,
+all at the same level. Example:
 ```bash
 python -m src.train_sft --run_name X --pipeline P1 --lora_r 16 \
-  -- --sft_dose 500 --learning_rate 2e-4
+  --sft_dose 500 --learning_rate 2e-4
 ```
 
 ## Environment

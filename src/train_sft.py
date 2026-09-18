@@ -1,25 +1,41 @@
 import os
 import json
+import argparse
 from pathlib import Path
 
 import torch
-import tyro
 from datasets import load_dataset
 from peft import LoraConfig, TaskType
 from transformers import AutoTokenizer
 from trl import SFTTrainer, SFTConfig
 
-from src.config import BaseRunConfig, TARGET_MODULE_PRESETS
+from src.config import add_run_config, TARGET_MODULE_PRESETS
 from src.utils.wandb_setup import init_wandb
 
 
-def main(cfg: BaseRunConfig,
-         sft_dose: int = 500,
-         learning_rate: float = 2e-4,
-         num_epochs: int = 1,
-         per_device_batch_size: int = 4,
-         grad_accum: int = 4,
-         max_length: int = 2048):
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="SFT stage (pipelines P1/P2/P3)")
+    add_run_config(parser)
+
+    g = parser.add_argument_group("sft")
+    g.add_argument("--sft_dose", type=int, default=500,
+                   help="SFT examples to use; reads data/processed/sft_dose_<N>.jsonl")
+    g.add_argument("--learning_rate", type=float, default=2e-4)
+    g.add_argument("--num_epochs", type=int, default=1)
+    g.add_argument("--per_device_batch_size", type=int, default=4)
+    g.add_argument("--grad_accum", type=int, default=4)
+    g.add_argument("--max_length", type=int, default=2048)
+    return parser
+
+
+def main(cfg: argparse.Namespace) -> None:
+    # Stage hyperparameters; defaults are declared in build_parser().
+    sft_dose: int = cfg.sft_dose
+    learning_rate: float = cfg.learning_rate
+    num_epochs: int = cfg.num_epochs
+    per_device_batch_size: int = cfg.per_device_batch_size
+    grad_accum: int = cfg.grad_accum
+    max_length: int = cfg.max_length
 
     os.environ.setdefault("WANDB_PROJECT", cfg.wandb_project)
     output_dir = Path("results/raw") / cfg.run_name
@@ -142,4 +158,4 @@ def main(cfg: BaseRunConfig,
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    main(build_parser().parse_args())

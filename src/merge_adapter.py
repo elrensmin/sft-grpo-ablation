@@ -1,7 +1,16 @@
+import argparse
 import json
-import tyro
 from peft import PeftModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Merge a LoRA adapter into its base model")
+    parser.add_argument("--adapter_path", required=True)
+    parser.add_argument("--output_path", required=True)
+    parser.add_argument("--base_model", default="",
+                        help="Defaults to the base_model_name_or_path in adapter_config.json")
+    return parser
 
 
 def main(adapter_path: str, output_path: str, base_model: str = ""):
@@ -22,4 +31,4 @@ def main(adapter_path: str, output_path: str, base_model: str = ""):
 
 
 if __name__ == "__main__":
-    tyro.cli(main)
+    main(**vars(build_parser().parse_args()))

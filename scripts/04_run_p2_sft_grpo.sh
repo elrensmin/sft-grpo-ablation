@@ -23,7 +23,6 @@ for DOSE in 500 5000 50000; do
         --model_name "$MODEL" \
         --lora_r $R --lora_alpha $((R*2)) \
         --lora_target_preset attn \
-        -- \
         --sft_dose $DOSE --learning_rate 2e-4 --num_epochs 1
     fi
 
@@ -38,7 +37,6 @@ for DOSE in 500 5000 50000; do
       --lora_r $R --lora_alpha $((R*2)) \
       --lora_target_preset attn \
       --init_adapter_path "$SFT_DIR" \
-      -- \
       --learning_rate 1e-6 --num_epochs 1
   done
 done
